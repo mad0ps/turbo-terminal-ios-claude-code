@@ -340,34 +340,53 @@ ALIASES
 
 # Меню tmux при логине
 if [ -z "\$TMUX" ]; then
+    _C='\\033[0;36m'
+    _W='\\033[1;37m'
+    _G='\\033[0;32m'
+    _Y='\\033[1;33m'
+    _D='\\033[0;90m'
+    _N='\\033[0m'
+
     echo ""
-    echo "=== TMUX SESSIONS ==="
+    echo -e "\${_C}   ┌┬┐┬ ┬┬─┐┌┐ ┌─┐  ┌┬┐┌─┐┬─┐┌┬┐\${_N}"
+    echo -e "\${_C}    │ │ │├┬┘├┴┐│ │   │ ├┤ ├┬┘│││\${_N}"
+    echo -e "\${_C}    ┴ └─┘┴└─└─┘└─┘   ┴ └─┘┴└─┴ ┴\${_N}"
+    echo -e "\${_D}   ─────────────────────────────────\${_N}"
+    echo -e "\${_D}   iPhone · tmux · Claude Code\${_N}"
     echo ""
-    if tmux ls 2>/dev/null; then
+
+    SESSIONS=\$(tmux ls 2>/dev/null)
+    if [ \$? -eq 0 ]; then
+        echo -e "  \${_G}● АКТИВНЫЕ СЕССИИ\${_N}"
+        echo -e "  \${_D}───────────────────────────────\${_N}"
+        echo "\$SESSIONS" | while IFS= read -r line; do
+            sess_name=\$(echo "\$line" | cut -d: -f1)
+            sess_info=\$(echo "\$line" | cut -d: -f2-)
+            echo -e "    \${_W}▸ \${sess_name}\${_N}\${_D}\${sess_info}\${_N}"
+        done
+        echo -e "  \${_D}───────────────────────────────\${_N}"
         echo ""
-        echo "[a] attach to session (enter name)"
-        echo "[n] new session (enter name)"
-        echo "[r] rename session"
-        echo "[s] shell without tmux"
+        echo -e "  \${_Y}[a]\${_N} attach  \${_Y}[n]\${_N} new  \${_Y}[r]\${_N} rename  \${_Y}[s]\${_N} shell"
+        echo -e "  \${_D}или введи имя сессии\${_N}"
         echo ""
-        read -p "→ " choice
+        read -p "  → " choice
         case \$choice in
-            a) read -p "session: " sess; tmux a -t "\$sess";;
-            n) read -p "name: " sess; tmux new -s "\$sess" -c "$PROJECTS_DIR/\$sess" 2>/dev/null || tmux new -s "\$sess";;
-            r) read -p "старое имя: " old; read -p "новое имя: " new; tmux rename-session -t "\$old" "\$new";;
+            a) read -p "  session: " sess; tmux a -t "\$sess";;
+            n) read -p "  name: " sess; tmux new -s "\$sess" -c "$PROJECTS_DIR/\$sess" 2>/dev/null || tmux new -s "\$sess";;
+            r) read -p "  старое имя: " old; read -p "  новое имя: " new; tmux rename-session -t "\$old" "\$new" && echo -e "  \${_G}✓\${_N} \$old → \$new";;
             s) ;;
             "") ;;
             *) tmux a -t "\$choice" 2>/dev/null || tmux new -s "\$choice";;
         esac
     else
-        echo "no active sessions"
+        echo -e "  \${_D}○ нет активных сессий\${_N}"
         echo ""
-        echo "[n] new session (enter name)"
-        echo "[s] shell without tmux"
+        echo -e "  \${_Y}[n]\${_N} new session   \${_Y}[s]\${_N} shell"
+        echo -e "  \${_D}или введи имя для новой сессии\${_N}"
         echo ""
-        read -p "→ " choice
+        read -p "  → " choice
         case \$choice in
-            n) read -p "name: " sess; tmux new -s "\$sess" -c "$PROJECTS_DIR/\$sess" 2>/dev/null || tmux new -s "\$sess";;
+            n) read -p "  name: " sess; tmux new -s "\$sess" -c "$PROJECTS_DIR/\$sess" 2>/dev/null || tmux new -s "\$sess";;
             s|"") ;;
             *) tmux new -s "\$choice";;
         esac
