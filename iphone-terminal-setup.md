@@ -1,7 +1,7 @@
 # iPhone Terminal Ultra Setup
 
 > Полная конфигурация для работы с сервером через iPhone (Termius + tmux + Claude Code)
-> Автор: Khan | Дата: 2025-02-08
+> Автор: Khan
 
 ---
 
@@ -12,11 +12,19 @@
 ### Шаг 1 — Бэкап
 
 ```bash
-cp ~/.bashrc ~/.bashrc.bak 2>/dev/null
-cp ~/.tmux.conf ~/.tmux.conf.bak 2>/dev/null
+mkdir -p ~/.terminal-setup-backup && chmod 700 ~/.terminal-setup-backup
+cp ~/.bashrc ~/.terminal-setup-backup/ 2>/dev/null
+cp ~/.tmux.conf ~/.terminal-setup-backup/ 2>/dev/null
 ```
 
-### Шаг 2 — .bashrc часть 1 (алиасы)
+### Шаг 2 — Установка Claude Code (если нет)
+
+```bash
+command -v claude &>/dev/null || curl -fsSL https://claude.ai/install.sh | bash
+claude --version
+```
+
+### Шаг 3 — .bashrc часть 1 (алиасы)
 
 ```bash
 cat >> ~/.bashrc << 'EOF'
@@ -41,19 +49,31 @@ alias l='ls -la'
 EOF
 ```
 
-### Шаг 3 — .bashrc часть 2 (функции)
+### Шаг 4 — .bashrc часть 2 (функции)
 
 ```bash
 cat >> ~/.bashrc << 'EOF'
 
-# Проекты
-p() { cd /opt/$1 && ls; }
-np() { tmux new -s $1 -c /opt/$1; }
+# Проекты (/opt)
+p() {
+    if [ -z "$1" ]; then
+        echo "Доступные проекты:"
+        ls -1 /opt
+        return
+    fi
+    if [ ! -d "/opt/$1" ]; then
+        echo "Проект не найден: $1"
+        echo "Доступные: $(ls -1 /opt)"
+        return 1
+    fi
+    cd "/opt/$1" && ls
+}
+np() { tmux new -s "$1" -c "/opt/$1"; }
 
 # Автокомплит для p и np
 _opt_complete() {
-    local cur=${COMP_WORDS[COMP_CWORD]}
-    COMPREPLY=($(ls /opt/ | grep "^$cur"))
+    local cur="${COMP_WORDS[COMP_CWORD]}"
+    COMPREPLY=($(compgen -W "$(ls -1 /opt 2>/dev/null)" -- "$cur"))
 }
 complete -F _opt_complete p np
 
@@ -62,7 +82,7 @@ PS1='\W → '
 EOF
 ```
 
-### Шаг 4 — .bashrc часть 3 (меню при логине)
+### Шаг 5 — .bashrc часть 3 (меню при логине)
 
 ```bash
 cat >> ~/.bashrc << 'EOF'
@@ -76,14 +96,16 @@ if [ -z "$TMUX" ]; then
         echo ""
         echo "[a] attach to session (enter name)"
         echo "[n] new session (enter name)"
+        echo "[r] rename session"
         echo "[s] shell without tmux"
         echo ""
         read -p "→ " choice
         case $choice in
-            a) read -p "session: " sess; tmux a -t $sess;;
-            n) read -p "name: " sess; tmux new -s $sess -c /opt/$sess 2>/dev/null || tmux new -s $sess;;
+            a) read -p "session: " sess; tmux a -t "$sess";;
+            n) read -p "name: " sess; tmux new -s "$sess" -c "/opt/$sess" 2>/dev/null || tmux new -s "$sess";;
+            r) read -p "старое имя: " old; read -p "новое имя: " new; tmux rename-session -t "$old" "$new";;
             s) ;;
-            *) tmux a -t $choice 2>/dev/null || tmux new -s $choice;;
+            *) tmux a -t "$choice" 2>/dev/null || tmux new -s "$choice";;
         esac
     else
         echo "no active sessions"
@@ -93,16 +115,16 @@ if [ -z "$TMUX" ]; then
         echo ""
         read -p "→ " choice
         case $choice in
-            n) read -p "name: " sess; tmux new -s $sess -c /opt/$sess 2>/dev/null || tmux new -s $sess;;
+            n) read -p "name: " sess; tmux new -s "$sess" -c "/opt/$sess" 2>/dev/null || tmux new -s "$sess";;
             s) ;;
-            *) tmux new -s $choice;;
+            *) tmux new -s "$choice";;
         esac
     fi
 fi
 EOF
 ```
 
-### Шаг 5 — .tmux.conf часть 1 (базовое)
+### Шаг 6 — .tmux.conf часть 1 (базовое + внешний вид)
 
 ```bash
 cat > ~/.tmux.conf << 'EOF'
@@ -123,13 +145,6 @@ set -g status-style 'bg=black fg=white'
 set -g status-left ' #S '
 set -g status-left-length 15
 set -g status-right '#I/#{session_windows}'
-EOF
-```
-
-### Шаг 6 — .tmux.conf часть 2 (внешний вид)
-
-```bash
-cat >> ~/.tmux.conf << 'EOF'
 
 # Подсветка активного окна
 set -g window-status-current-style 'bg=white fg=black bold'
@@ -142,7 +157,7 @@ set -g automatic-rename-format '#{b:pane_current_path}'
 EOF
 ```
 
-### Шаг 7 — .tmux.conf часть 3 (управление)
+### Шаг 7 — .tmux.conf часть 2 (управление)
 
 ```bash
 cat >> ~/.tmux.conf << 'EOF'
@@ -173,6 +188,7 @@ EOF
 ### Шаг 8 — Tmux Resurrect + Continuum (автосохранение сессий)
 
 ```bash
+mkdir -p ~/.tmux/plugins
 git clone https://github.com/tmux-plugins/tmux-resurrect ~/.tmux/plugins/tmux-resurrect
 git clone https://github.com/tmux-plugins/tmux-continuum ~/.tmux/plugins/tmux-continuum
 ```
@@ -189,10 +205,11 @@ set -g @resurrect-save-shell-history 'off'
 EOF
 ```
 
-Очистка старых сохранений (крон):
+Очистка старых сохранений (крон, добавляется только если ещё нет):
 
 ```bash
-(crontab -l 2>/dev/null; echo "0 */6 * * * find ~/.tmux/resurrect -name '*.txt' ! -name 'last' -mmin +60 -delete") | crontab -
+crontab -l 2>/dev/null | grep -q 'tmux/resurrect' || \
+  (crontab -l 2>/dev/null; echo "0 */6 * * * find ~/.tmux/resurrect -name '*.txt' ! -name 'last' -mmin +60 -delete") | crontab -
 ```
 
 ### Шаг 9 — Применить
@@ -257,6 +274,16 @@ source ~/.bashrc
 | Список tmux сессий | `tl` |
 | Убить сессию | `tk имя` |
 
+### Меню логина
+
+| Действие | Команда |
+|----------|---------|
+| Подключиться к сессии | `a` → имя |
+| Новая сессия | `n` → имя |
+| Переименовать сессию | `r` → старое → новое |
+| Shell без tmux | `s` |
+| Быстрый вход | просто введи имя сессии |
+
 ---
 
 ## Типичный рабочий процесс
@@ -287,25 +314,20 @@ source ~/.bashrc
 
 ## Восстановление на новом сервере
 
-```bash
-# 1. Скопируй этот файл на новый сервер
-# 2. Выполни шаги 2-9 по порядку
-# 3. Готово
-```
-
-Или одной командой (если файл на GitHub/где-то доступен):
+Одной командой:
 
 ```bash
-curl -sL https://your-url/setup.sh | bash
+git clone https://github.com/mad0ps/turbo-terminal-ios-claude-code.git /tmp/turbo-setup && bash /tmp/turbo-setup/setup.sh
 ```
+
+Или вручную — выполни шаги 1-9 по порядку.
 
 ---
 
 ## Откат к исходным настройкам
 
 ```bash
-cp ~/.bashrc.bak ~/.bashrc 2>/dev/null
-cp ~/.tmux.conf.bak ~/.tmux.conf 2>/dev/null
+cp ~/.terminal-setup-backup/* ~/ 2>/dev/null
 source ~/.bashrc
-tmux source ~/.tmux.conf
+tmux source ~/.tmux.conf 2>/dev/null
 ```
