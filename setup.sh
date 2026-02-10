@@ -265,16 +265,28 @@ if [ "$INSTALL_CLAUDE" = true ]; then
 fi
 
 # ============================================
-# АЛИАСЫ
+# АЛИАСЫ + МЕНЮ ЛОГИНА
 # ============================================
 
-if [ "$INSTALL_ALIASES" = true ]; then
-    header "АЛИАСЫ"
+if [ "$INSTALL_ALIASES" = true ] || [ "$INSTALL_MENU" = true ]; then
+    header "АЛИАСЫ И МЕНЮ"
 
-    cat >> "$SHELL_RC" << ALIASES
+    # Удаляем старый блок если есть (для идемпотентности)
+    if grep -q '# === ULTRA TERMINAL CONFIG ===' "$SHELL_RC" 2>/dev/null; then
+        sed -i '/# === ULTRA TERMINAL CONFIG ===/,/# === END ULTRA TERMINAL CONFIG ===/d' "$SHELL_RC"
+        info "Старый конфиг удалён из $SHELL_RC"
+    fi
+
+    # Открываем блок
+    cat >> "$SHELL_RC" << BLOCK_START
 
 # === ULTRA TERMINAL CONFIG ===
 # Installed: $(date +%Y-%m-%d)
+BLOCK_START
+
+    # Алиасы
+    if [ "$INSTALL_ALIASES" = true ]; then
+        cat >> "$SHELL_RC" << ALIASES
 
 # Tmux
 alias tl='tmux ls'
@@ -319,17 +331,12 @@ complete -F _opt_complete p np
 PS1='\W → '
 ALIASES
 
-    info "Алиасы добавлены в $SHELL_RC"
-fi
+        info "Алиасы добавлены в $SHELL_RC"
+    fi
 
-# ============================================
-# МЕНЮ ЛОГИНА
-# ============================================
-
-if [ "$INSTALL_MENU" = true ]; then
-    header "МЕНЮ ЛОГИНА"
-
-    cat >> "$SHELL_RC" << MENU
+    # Меню логина
+    if [ "$INSTALL_MENU" = true ]; then
+        cat >> "$SHELL_RC" << MENU
 
 # Меню tmux при логине
 if [ -z "\$TMUX" ]; then
@@ -368,7 +375,11 @@ if [ -z "\$TMUX" ]; then
 fi
 MENU
 
-    info "Меню логина добавлено"
+        info "Меню логина добавлено"
+    fi
+
+    # Закрываем блок
+    echo '# === END ULTRA TERMINAL CONFIG ===' >> "$SHELL_RC"
 fi
 
 # ============================================
