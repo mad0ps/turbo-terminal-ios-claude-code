@@ -349,6 +349,7 @@ if [ -z "\$TMUX" ]; then
             n) read -p "name: " sess; tmux new -s "\$sess" -c "$PROJECTS_DIR/\$sess" 2>/dev/null || tmux new -s "\$sess";;
             r) read -p "старое имя: " old; read -p "новое имя: " new; tmux rename-session -t "\$old" "\$new";;
             s) ;;
+            "") ;;
             *) tmux a -t "\$choice" 2>/dev/null || tmux new -s "\$choice";;
         esac
     else
@@ -360,7 +361,7 @@ if [ -z "\$TMUX" ]; then
         read -p "→ " choice
         case \$choice in
             n) read -p "name: " sess; tmux new -s "\$sess" -c "$PROJECTS_DIR/\$sess" 2>/dev/null || tmux new -s "\$sess";;
-            s) ;;
+            s|"") ;;
             *) tmux new -s "\$choice";;
         esac
     fi

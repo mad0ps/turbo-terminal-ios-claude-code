@@ -12,9 +12,11 @@
 ### Шаг 1 — Бэкап
 
 ```bash
-mkdir -p ~/.terminal-setup-backup && chmod 700 ~/.terminal-setup-backup
-cp ~/.bashrc ~/.terminal-setup-backup/ 2>/dev/null
-cp ~/.tmux.conf ~/.terminal-setup-backup/ 2>/dev/null
+BACKUP_DIR="$HOME/.terminal-setup-backup-$(date +%Y%m%d-%H%M%S)"
+mkdir -p "$BACKUP_DIR" && chmod 700 "$BACKUP_DIR"
+cp ~/.bashrc "$BACKUP_DIR/" 2>/dev/null
+cp ~/.tmux.conf "$BACKUP_DIR/" 2>/dev/null
+echo "Бэкап в: $BACKUP_DIR"
 ```
 
 ### Шаг 2 — Установка Claude Code (если нет)
@@ -105,6 +107,7 @@ if [ -z "$TMUX" ]; then
             n) read -p "name: " sess; tmux new -s "$sess" -c "/opt/$sess" 2>/dev/null || tmux new -s "$sess";;
             r) read -p "старое имя: " old; read -p "новое имя: " new; tmux rename-session -t "$old" "$new";;
             s) ;;
+            "") ;;
             *) tmux a -t "$choice" 2>/dev/null || tmux new -s "$choice";;
         esac
     else
@@ -116,7 +119,7 @@ if [ -z "$TMUX" ]; then
         read -p "→ " choice
         case $choice in
             n) read -p "name: " sess; tmux new -s "$sess" -c "/opt/$sess" 2>/dev/null || tmux new -s "$sess";;
-            s) ;;
+            s|"") ;;
             *) tmux new -s "$choice";;
         esac
     fi
@@ -327,7 +330,8 @@ git clone https://github.com/mad0ps/turbo-terminal-ios-claude-code.git /tmp/turb
 ## Откат к исходным настройкам
 
 ```bash
-cp ~/.terminal-setup-backup/* ~/ 2>/dev/null
+# Найти последний бэкап и восстановить
+cp ~/.terminal-setup-backup-*/* ~/ 2>/dev/null
 source ~/.bashrc
 tmux source ~/.tmux.conf 2>/dev/null
 ```
