@@ -5,7 +5,9 @@
 # Interactive installer for tmux + aliases
 # ============================================
 
-set -e
+set -euo pipefail
+
+trap 'error "Скрипт прерван (строка $LINENO)"' ERR
 
 # Цвета
 GREEN='\033[0;32m'
@@ -38,12 +40,12 @@ PKG=""
 if command -v apt-get &>/dev/null; then
     PKG="apt"
     info "Package manager: apt"
-elif command -v yum &>/dev/null; then
-    PKG="yum"
-    info "Package manager: yum"
 elif command -v dnf &>/dev/null; then
     PKG="dnf"
     info "Package manager: dnf"
+elif command -v yum &>/dev/null; then
+    PKG="yum"
+    info "Package manager: yum"
 elif command -v apk &>/dev/null; then
     PKG="apk"
     info "Package manager: apk"
@@ -60,10 +62,17 @@ info "Shell: $CURRENT_SHELL ($SHELL)"
 
 case "$CURRENT_SHELL" in
     bash)
-        SHELL_RC="$HOME/.bashrc"
+        if [ -f "$HOME/.bash_profile" ] && ! grep -q 'bashrc' "$HOME/.bash_profile" 2>/dev/null; then
+            SHELL_RC="$HOME/.bash_profile"
+        else
+            SHELL_RC="$HOME/.bashrc"
+        fi
         ;;
     zsh)
         SHELL_RC="$HOME/.zshrc"
+        ;;
+    fish)
+        SHELL_RC="$HOME/.config/fish/config.fish"
         ;;
     *)
         warn "Неизвестный shell: $CURRENT_SHELL, используем ~/.profile"
@@ -74,7 +83,7 @@ info "Конфиг shell: $SHELL_RC"
 
 # Tmux
 if command -v tmux &>/dev/null; then
-    TMUX_VERSION=$(tmux -V | awk '{print $2}')
+    TMUX_VERSION=$(tmux -V | awk '{print $NF}')
     info "tmux: v$TMUX_VERSION (установлен)"
     TMUX_INSTALLED=true
 else
@@ -84,7 +93,7 @@ fi
 
 # Git
 if command -v git &>/dev/null; then
-    info "git: $(git --version | awk '{print $3}')"
+    info "git: $(git --version | awk '{print $NF}')"
     GIT_INSTALLED=true
 else
     warn "git: не установлен"
@@ -93,7 +102,7 @@ fi
 
 # Claude Code
 if command -v claude &>/dev/null; then
-    info "Claude Code: установлен"
+    info "Claude Code: $(claude --version 2>/dev/null || echo 'установлен')"
     HAS_CLAUDE=true
 else
     warn "Claude Code: не найден"
@@ -109,11 +118,16 @@ header "НАСТРОЙКИ"
 read -p "Путь к проектам [/opt]: " PROJECTS_DIR
 PROJECTS_DIR=${PROJECTS_DIR:-/opt}
 
+# Раскрытие ~ в путях
+PROJECTS_DIR="${PROJECTS_DIR/#\~/$HOME}"
+
 if [ -d "$PROJECTS_DIR" ]; then
+    PROJECTS_DIR=$(cd "$PROJECTS_DIR" && pwd)
     info "Директория проектов: $PROJECTS_DIR"
 else
     warn "Директория $PROJECTS_DIR не существует"
-    read -p "Создать? [y/n]: " create_dir
+    read -p "Создать? [Y/n]: " create_dir
+    create_dir=${create_dir:-y}
     if [ "$create_dir" = "y" ]; then
         mkdir -p "$PROJECTS_DIR"
         info "Создана: $PROJECTS_DIR"
@@ -127,30 +141,45 @@ header "ЧТО СТАВИМ?"
 
 INSTALL_TMUX=false
 if [ "$TMUX_INSTALLED" = false ]; then
-    read -p "Установить tmux? [y/n]: " choice
+    read -p "Установить tmux? [Y/n]: " choice
+    choice=${choice:-y}
     [ "$choice" = "y" ] && INSTALL_TMUX=true
 fi
 
-read -p "Алиасы и функции (навигация, Claude Code)? [y/n]: " choice
+INSTALL_CLAUDE=false
+if [ "$HAS_CLAUDE" = false ]; then
+    read -p "Установить Claude Code? [Y/n]: " choice
+    choice=${choice:-y}
+    [ "$choice" = "y" ] && INSTALL_CLAUDE=true
+fi
+
+INSTALL_GIT=false
+
+read -p "Алиасы и функции (навигация, Claude Code)? [Y/n]: " choice
+choice=${choice:-y}
 INSTALL_ALIASES=false
 [ "$choice" = "y" ] && INSTALL_ALIASES=true
 
-read -p "Конфиг tmux (prefix, сплиты, статус-бар)? [y/n]: " choice
+read -p "Конфиг tmux (prefix, сплиты, статус-бар)? [Y/n]: " choice
+choice=${choice:-y}
 INSTALL_TMUX_CONF=false
 [ "$choice" = "y" ] && INSTALL_TMUX_CONF=true
 
-read -p "Меню сессий при логине? [y/n]: " choice
+read -p "Меню сессий при логине? [Y/n]: " choice
+choice=${choice:-y}
 INSTALL_MENU=false
 [ "$choice" = "y" ] && INSTALL_MENU=true
 
-read -p "Автосохранение сессий (resurrect + continuum)? [y/n]: " choice
+read -p "Автосохранение сессий (resurrect + continuum)? [Y/n]: " choice
+choice=${choice:-y}
 INSTALL_PLUGINS=false
 [ "$choice" = "y" ] && INSTALL_PLUGINS=true
 
 # Проверка git для плагинов
 if [ "$INSTALL_PLUGINS" = true ] && [ "$GIT_INSTALLED" = false ]; then
     warn "Для плагинов нужен git"
-    read -p "Установить git? [y/n]: " choice
+    read -p "Установить git? [Y/n]: " choice
+    choice=${choice:-y}
     if [ "$choice" = "y" ]; then
         INSTALL_GIT=true
     else
@@ -163,13 +192,21 @@ fi
 header "ПЛАН УСТАНОВКИ"
 
 [ "$INSTALL_TMUX" = true ] && echo "  → Установить tmux"
+[ "$INSTALL_CLAUDE" = true ] && echo "  → Установить Claude Code"
+[ "$INSTALL_GIT" = true ] && echo "  → Установить git"
 [ "$INSTALL_ALIASES" = true ] && echo "  → Алиасы в $SHELL_RC"
 [ "$INSTALL_TMUX_CONF" = true ] && echo "  → Конфиг ~/.tmux.conf"
 [ "$INSTALL_MENU" = true ] && echo "  → Меню сессий при логине"
 [ "$INSTALL_PLUGINS" = true ] && echo "  → Плагины resurrect + continuum"
 echo ""
 
-read -p "Поехали? [y/n]: " confirm
+if [ "$INSTALL_TMUX" = true ] || [ "$INSTALL_GIT" = true ]; then
+    echo -e "${YELLOW}[!]${NC} Может потребоваться пароль sudo для установки пакетов"
+    echo ""
+fi
+
+read -p "Поехали? [Y/n]: " confirm
+confirm=${confirm:-y}
 if [ "$confirm" != "y" ]; then
     echo "Отменено."
     exit 0
@@ -182,6 +219,7 @@ header "БЭКАП"
 
 BACKUP_DIR="$HOME/.terminal-setup-backup-$(date +%Y%m%d-%H%M%S)"
 mkdir -p "$BACKUP_DIR"
+chmod 700 "$BACKUP_DIR"
 
 if [ -f "$SHELL_RC" ]; then
     cp "$SHELL_RC" "$BACKUP_DIR/"
@@ -200,7 +238,7 @@ info "Бэкапы в: $BACKUP_DIR"
 # ============================================
 
 install_pkg() {
-    local pkg=$1
+    local pkg="$1"
     case "$PKG" in
         apt) sudo apt-get update -qq && sudo apt-get install -y -qq "$pkg";;
         yum) sudo yum install -y -q "$pkg";;
@@ -216,9 +254,14 @@ if [ "$INSTALL_TMUX" = true ]; then
     install_pkg tmux && info "tmux установлен: $(tmux -V)" || error "Не удалось установить tmux"
 fi
 
-if [ "${INSTALL_GIT:-false}" = true ]; then
+if [ "$INSTALL_GIT" = true ]; then
     header "УСТАНОВКА GIT"
     install_pkg git && info "git установлен" || error "Не удалось установить git"
+fi
+
+if [ "$INSTALL_CLAUDE" = true ]; then
+    header "УСТАНОВКА CLAUDE CODE"
+    curl -fsSL https://claude.ai/install.sh | bash && info "Claude Code: $(claude --version 2>/dev/null)" || error "Не удалось установить Claude Code"
 fi
 
 # ============================================
@@ -250,13 +293,25 @@ alias ...='cd ../..'
 alias l='ls -la'
 
 # Проекты ($PROJECTS_DIR)
-p() { cd $PROJECTS_DIR/\$1 && ls; }
-np() { tmux new -s \$1 -c $PROJECTS_DIR/\$1; }
+p() {
+    if [ -z "\$1" ]; then
+        echo "Доступные проекты:"
+        ls -1 "$PROJECTS_DIR"
+        return
+    fi
+    if [ ! -d "$PROJECTS_DIR/\$1" ]; then
+        echo "Проект не найден: \$1"
+        echo "Доступные: \$(ls -1 "$PROJECTS_DIR")"
+        return 1
+    fi
+    cd "$PROJECTS_DIR/\$1" && ls
+}
+np() { tmux new -s "\$1" -c "$PROJECTS_DIR/\$1"; }
 
 # Автокомплит для p и np
 _opt_complete() {
-    local cur=\${COMP_WORDS[COMP_CWORD]}
-    COMPREPLY=(\$(ls $PROJECTS_DIR/ | grep "^\$cur"))
+    local cur="\${COMP_WORDS[COMP_CWORD]}"
+    COMPREPLY=(\$(compgen -W "\$(ls -1 "$PROJECTS_DIR" 2>/dev/null)" -- "\$cur"))
 }
 complete -F _opt_complete p np
 
@@ -274,10 +329,10 @@ fi
 if [ "$INSTALL_MENU" = true ]; then
     header "МЕНЮ ЛОГИНА"
 
-    cat >> "$SHELL_RC" << 'MENU'
+    cat >> "$SHELL_RC" << MENU
 
 # Меню tmux при логине
-if [ -z "$TMUX" ]; then
+if [ -z "\$TMUX" ]; then
     echo ""
     echo "=== TMUX SESSIONS ==="
     echo ""
@@ -285,14 +340,16 @@ if [ -z "$TMUX" ]; then
         echo ""
         echo "[a] attach to session (enter name)"
         echo "[n] new session (enter name)"
+        echo "[r] rename session"
         echo "[s] shell without tmux"
         echo ""
         read -p "→ " choice
-        case $choice in
-            a) read -p "session: " sess; tmux a -t $sess;;
-            n) read -p "name: " sess; tmux new -s $sess -c /opt/$sess 2>/dev/null || tmux new -s $sess;;
+        case \$choice in
+            a) read -p "session: " sess; tmux a -t "\$sess";;
+            n) read -p "name: " sess; tmux new -s "\$sess" -c "$PROJECTS_DIR/\$sess" 2>/dev/null || tmux new -s "\$sess";;
+            r) read -p "старое имя: " old; read -p "новое имя: " new; tmux rename-session -t "\$old" "\$new";;
             s) ;;
-            *) tmux a -t $choice 2>/dev/null || tmux new -s $choice;;
+            *) tmux a -t "\$choice" 2>/dev/null || tmux new -s "\$choice";;
         esac
     else
         echo "no active sessions"
@@ -301,10 +358,10 @@ if [ -z "$TMUX" ]; then
         echo "[s] shell without tmux"
         echo ""
         read -p "→ " choice
-        case $choice in
-            n) read -p "name: " sess; tmux new -s $sess -c /opt/$sess 2>/dev/null || tmux new -s $sess;;
+        case \$choice in
+            n) read -p "name: " sess; tmux new -s "\$sess" -c "$PROJECTS_DIR/\$sess" 2>/dev/null || tmux new -s "\$sess";;
             s) ;;
-            *) tmux new -s $choice;;
+            *) tmux new -s "\$choice";;
         esac
     fi
 fi
@@ -382,16 +439,18 @@ if [ "$INSTALL_PLUGINS" = true ]; then
 
     mkdir -p "$HOME/.tmux/plugins"
 
-    if [ ! -d "$HOME/.tmux/plugins/tmux-resurrect" ]; then
-        git clone -q https://github.com/tmux-plugins/tmux-resurrect "$HOME/.tmux/plugins/tmux-resurrect"
-        info "tmux-resurrect установлен"
+    if [ ! -d "$HOME/.tmux/plugins/tmux-resurrect/.git" ]; then
+        rm -rf "$HOME/.tmux/plugins/tmux-resurrect"
+        git clone -q https://github.com/tmux-plugins/tmux-resurrect "$HOME/.tmux/plugins/tmux-resurrect" && \
+            info "tmux-resurrect установлен" || error "Ошибка при клонировании tmux-resurrect"
     else
         info "tmux-resurrect уже есть"
     fi
 
-    if [ ! -d "$HOME/.tmux/plugins/tmux-continuum" ]; then
-        git clone -q https://github.com/tmux-plugins/tmux-continuum "$HOME/.tmux/plugins/tmux-continuum"
-        info "tmux-continuum установлен"
+    if [ ! -d "$HOME/.tmux/plugins/tmux-continuum/.git" ]; then
+        rm -rf "$HOME/.tmux/plugins/tmux-continuum"
+        git clone -q https://github.com/tmux-plugins/tmux-continuum "$HOME/.tmux/plugins/tmux-continuum" && \
+            info "tmux-continuum установлен" || error "Ошибка при клонировании tmux-continuum"
     else
         info "tmux-continuum уже есть"
     fi
@@ -406,11 +465,15 @@ set -g @continuum-restore 'on'
 set -g @resurrect-save-shell-history 'off'
 PLUGINS
 
-    # Крон для очистки старых сохранений
-    (crontab -l 2>/dev/null | grep -v 'tmux/resurrect'; echo "0 */6 * * * find ~/.tmux/resurrect -name '*.txt' ! -name 'last' -mmin +60 -delete") | crontab -
+    # Крон для очистки старых сохранений (добавляем только если ещё нет)
+    if ! crontab -l 2>/dev/null | grep -q 'tmux/resurrect'; then
+        (crontab -l 2>/dev/null; echo "0 */6 * * * find ~/.tmux/resurrect -name '*.txt' ! -name 'last' -mmin +60 -delete") | crontab - && \
+            info "Крон очистки настроен" || warn "Ошибка установки крона"
+    else
+        info "Крон очистки уже настроен"
+    fi
 
     info "Автосохранение каждые 10 минут"
-    info "Крон очистки настроен"
 fi
 
 # ============================================
