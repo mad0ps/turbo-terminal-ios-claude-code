@@ -318,7 +318,18 @@ p() {
     fi
     cd "$PROJECTS_DIR/\$1" && ls
 }
-np() { tmux new -s "\$1" -c "$PROJECTS_DIR/\$1"; }
+np() {
+    if [ -z "\$1" ]; then
+        echo "Использование: np <имя_проекта>"
+        return 1
+    fi
+    mkdir -p "$PROJECTS_DIR/\$1"
+    if [ -n "\$TMUX" ]; then
+        tmux new-window -n "\$1" -c "$PROJECTS_DIR/\$1"
+    else
+        tmux new -s 0 -n "\$1" -c "$PROJECTS_DIR/\$1"
+    fi
+}
 
 # Автокомплит для p и np
 _opt_complete() {
@@ -355,14 +366,13 @@ if [ -z "\$TMUX" ]; then
     echo -e "\${_D}   iPhone · tmux · Claude Code\${_N}"
     echo ""
 
-    SESSIONS=\$(tmux ls 2>/dev/null)
+    SESSIONS=\$(tmux ls -F '#{session_name}|#{session_windows}|#{W:#{window_name} }' 2>/dev/null)
     if [ \$? -eq 0 ]; then
         echo -e "  \${_G}● АКТИВНЫЕ СЕССИИ\${_N}"
         echo -e "  \${_D}───────────────────────────────\${_N}"
-        echo "\$SESSIONS" | while IFS= read -r line; do
-            sess_name=\$(echo "\$line" | cut -d: -f1)
-            sess_info=\$(echo "\$line" | cut -d: -f2-)
-            echo -e "    \${_W}▸ \${sess_name}\${_N}\${_D}\${sess_info}\${_N}"
+        echo "\$SESSIONS" | while IFS='|' read -r sess_name win_count win_names; do
+            win_names=\$(echo "\$win_names" | sed 's/ *\$//')
+            echo -e "    \${_W}▸ \${sess_name}\${_N} \${_D}(\${win_count} окон)\${_N} \${_C}[\${win_names}]\${_N}"
         done
         echo -e "  \${_D}───────────────────────────────\${_N}"
         echo ""
@@ -542,7 +552,7 @@ ${BOLD}Шпаргалка:${NC}
   Ctrl+A n     новое окно
   Ctrl+A d     detach
   Ctrl+A g     popup окно
-  np имя       новая сессия проекта
+  np имя       новый проект (mkdir + окно)
   p имя        перейти в проект
   cr           продолжить Claude Code
 "
