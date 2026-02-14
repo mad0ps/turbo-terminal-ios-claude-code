@@ -366,7 +366,7 @@ if [ -z "\$TMUX" ]; then
     echo -e "\${_D}   iPhone · tmux · Claude Code\${_N}"
     echo ""
 
-    SESSIONS=\$(tmux ls -F '#{session_name}|#{session_windows}|#{W:#{window_name} }' 2>/dev/null)
+    SESSIONS=\$(tmux ls -F '#{session_name}|#{session_windows}|#{W:#{window_name} }' 2>/dev/null | sed 's/\\\\033\\[[0-9;]*[a-zA-Z]//g')
     if [ \$? -eq 0 ]; then
         echo -e "  \${_G}● АКТИВНЫЕ СЕССИИ\${_N}"
         echo -e "  \${_D}───────────────────────────────\${_N}"
