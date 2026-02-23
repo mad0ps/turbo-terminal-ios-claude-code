@@ -73,6 +73,7 @@ case "$CURRENT_SHELL" in
         ;;
     fish)
         SHELL_RC="$HOME/.config/fish/config.fish"
+        warn "Fish shell: алиасы и меню будут в bash-синтаксе — может потребоваться ручная адаптация"
         ;;
     *)
         warn "Неизвестный shell: $CURRENT_SHELL, используем ~/.profile"
@@ -278,6 +279,10 @@ fi
 if [ "$INSTALL_AGENT_PERMS" = true ]; then
     header "РАЗРЕШЕНИЯ CLAUDE CODE"
     mkdir -p "$HOME/.claude"
+    if [ -f "$HOME/.claude/settings.json" ]; then
+        cp "$HOME/.claude/settings.json" "$BACKUP_DIR/settings.json"
+        warn "Существующий settings.json сохранён в бэкап"
+    fi
     cat > "$HOME/.claude/settings.json" << 'CLAUDE_SETTINGS'
 {
   "permissions": {
@@ -306,6 +311,9 @@ fi
 
 if [ "$INSTALL_ALIASES" = true ] || [ "$INSTALL_MENU" = true ]; then
     header "АЛИАСЫ И МЕНЮ"
+
+    # Создаём RC-файл если не существует
+    touch "$SHELL_RC"
 
     # Удаляем старый блок если есть (для идемпотентности)
     if grep -q '# === ULTRA TERMINAL CONFIG ===' "$SHELL_RC" 2>/dev/null; then
@@ -363,7 +371,7 @@ np() {
     if [ -n "\$TMUX" ]; then
         tmux new-window -n "\$1" -c "$PROJECTS_DIR/\$1"
     else
-        tmux new -s 0 -n "\$1" -c "$PROJECTS_DIR/\$1"
+        tmux new -s "\$1" -n "\$1" -c "$PROJECTS_DIR/\$1"
     fi
 }
 
@@ -402,8 +410,7 @@ if [ -z "\$TMUX" ]; then
     echo -e "\${_D}   iPhone · tmux · Claude Code\${_N}"
     echo ""
 
-    SESSIONS=\$(tmux ls -F '#{session_name}|#{session_windows}|#{W:#{window_name} }' 2>/dev/null | sed 's/\\\\033\\[[0-9;]*[a-zA-Z]//g')
-    if [ \$? -eq 0 ]; then
+    if SESSIONS=\$(tmux ls -F '#{session_name}|#{session_windows}|#{W:#{window_name} }' 2>/dev/null | sed 's/\\\\033\\[[0-9;]*[a-zA-Z]//g') && [ -n "\$SESSIONS" ]; then
         echo -e "  \${_G}● АКТИВНЫЕ СЕССИИ\${_N}"
         echo -e "  \${_D}───────────────────────────────\${_N}"
         echo "\$SESSIONS" | while IFS='|' read -r sess_name win_count win_names; do
