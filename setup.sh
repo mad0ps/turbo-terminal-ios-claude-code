@@ -291,7 +291,8 @@ if [ "$INSTALL_AGENT_PERMS" = true ]; then
       "WebFetch",
       "WebSearch",
       "NotebookEdit",
-      "Task"
+      "Task",
+      "Skill"
     ]
   }
 }
