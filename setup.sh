@@ -175,6 +175,16 @@ choice=${choice:-y}
 INSTALL_PLUGINS=false
 [ "$choice" = "y" ] && INSTALL_PLUGINS=true
 
+INSTALL_AGENT_PERMS=false
+if command -v claude &>/dev/null || [ "$INSTALL_CLAUDE" = true ]; then
+    echo ""
+    warn "Следующая опция разрешает Claude Code выполнять ВСЕ действия без подтверждений"
+    warn "Рекомендуется только для доверенных серверов"
+    read -p "Расширенные разрешения для агентов? [y/N]: " choice
+    choice=${choice:-n}
+    [ "$choice" = "y" ] && INSTALL_AGENT_PERMS=true
+fi
+
 # Проверка git для плагинов
 if [ "$INSTALL_PLUGINS" = true ] && [ "$GIT_INSTALLED" = false ]; then
     warn "Для плагинов нужен git"
@@ -198,6 +208,7 @@ header "ПЛАН УСТАНОВКИ"
 [ "$INSTALL_TMUX_CONF" = true ] && echo "  → Конфиг ~/.tmux.conf"
 [ "$INSTALL_MENU" = true ] && echo "  → Меню сессий при логине"
 [ "$INSTALL_PLUGINS" = true ] && echo "  → Плагины resurrect + continuum"
+[ "$INSTALL_AGENT_PERMS" = true ] && echo "  → Расширенные разрешения Claude Code (без подтверждений)"
 echo ""
 
 if [ "$INSTALL_TMUX" = true ] || [ "$INSTALL_GIT" = true ]; then
@@ -262,6 +273,30 @@ fi
 if [ "$INSTALL_CLAUDE" = true ]; then
     header "УСТАНОВКА CLAUDE CODE"
     curl -fsSL https://claude.ai/install.sh | bash && info "Claude Code: $(claude --version 2>/dev/null)" || error "Не удалось установить Claude Code"
+fi
+
+if [ "$INSTALL_AGENT_PERMS" = true ]; then
+    header "РАЗРЕШЕНИЯ CLAUDE CODE"
+    mkdir -p "$HOME/.claude"
+    cat > "$HOME/.claude/settings.json" << 'CLAUDE_SETTINGS'
+{
+  "permissions": {
+    "allow": [
+      "Bash",
+      "Read",
+      "Edit",
+      "Write",
+      "Glob",
+      "Grep",
+      "WebFetch",
+      "WebSearch",
+      "NotebookEdit",
+      "Task"
+    ]
+  }
+}
+CLAUDE_SETTINGS
+    info "Расширенные разрешения установлены в ~/.claude/settings.json"
 fi
 
 # ============================================
