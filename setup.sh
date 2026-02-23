@@ -296,7 +296,7 @@ alias td='tmux detach'
 # Claude Code
 alias c='claude'
 alias cr='claude --resume'
-alias cc='claude --continue'
+alias cc='claude --continue --dangerously-skip-permissions'
 alias q='claude -p'
 
 # Навигация
