@@ -101,6 +101,15 @@ else
     GIT_INSTALLED=false
 fi
 
+# Локальная или удалённая машина
+if [ -n "${SSH_CONNECTION:-}" ]; then
+    IS_REMOTE=true
+    info "Тип подключения: удалённый сервер (SSH)"
+else
+    IS_REMOTE=false
+    info "Тип подключения: локальная машина"
+fi
+
 # Claude Code
 if command -v claude &>/dev/null; then
     info "Claude Code: $(claude --version 2>/dev/null || echo 'установлен')"
@@ -116,8 +125,13 @@ fi
 header "НАСТРОЙКИ"
 
 # Путь к проектам
-read -p "Путь к проектам [/opt]: " PROJECTS_DIR
-PROJECTS_DIR=${PROJECTS_DIR:-/opt}
+if [ "$IS_REMOTE" = true ]; then
+    DEFAULT_PROJECTS="/opt"
+else
+    DEFAULT_PROJECTS="$HOME/Projects"
+fi
+read -p "Путь к проектам [$DEFAULT_PROJECTS]: " PROJECTS_DIR
+PROJECTS_DIR=${PROJECTS_DIR:-$DEFAULT_PROJECTS}
 
 # Раскрытие ~ в путях
 PROJECTS_DIR="${PROJECTS_DIR/#\~/$HOME}"
@@ -141,10 +155,19 @@ fi
 header "ЧТО СТАВИМ?"
 
 INSTALL_TMUX=false
-if [ "$TMUX_INSTALLED" = false ]; then
-    read -p "Установить tmux? [Y/n]: " choice
-    choice=${choice:-y}
-    [ "$choice" = "y" ] && INSTALL_TMUX=true
+INSTALL_TMUX_CONF=false
+INSTALL_MENU=false
+INSTALL_PLUGINS=false
+INSTALL_GIT=false
+
+if [ "$IS_REMOTE" = true ]; then
+    if [ "$TMUX_INSTALLED" = false ]; then
+        read -p "Установить tmux? [Y/n]: " choice
+        choice=${choice:-y}
+        [ "$choice" = "y" ] && INSTALL_TMUX=true
+    fi
+else
+    info "Локальная машина — tmux, меню и плагины пропущены"
 fi
 
 INSTALL_CLAUDE=false
@@ -154,27 +177,29 @@ if [ "$HAS_CLAUDE" = false ]; then
     [ "$choice" = "y" ] && INSTALL_CLAUDE=true
 fi
 
-INSTALL_GIT=false
-
 read -p "Алиасы и функции (навигация, Claude Code)? [Y/n]: " choice
 choice=${choice:-y}
 INSTALL_ALIASES=false
 [ "$choice" = "y" ] && INSTALL_ALIASES=true
 
-read -p "Конфиг tmux (prefix, сплиты, статус-бар)? [Y/n]: " choice
-choice=${choice:-y}
-INSTALL_TMUX_CONF=false
-[ "$choice" = "y" ] && INSTALL_TMUX_CONF=true
+read -p "Короткий промпт (заменить на 'папка → ')? [y/N]: " choice
+choice=${choice:-n}
+INSTALL_PROMPT=false
+[ "$choice" = "y" ] && INSTALL_PROMPT=true
 
-read -p "Меню сессий при логине? [Y/n]: " choice
-choice=${choice:-y}
-INSTALL_MENU=false
-[ "$choice" = "y" ] && INSTALL_MENU=true
+if [ "$IS_REMOTE" = true ]; then
+    read -p "Конфиг tmux (prefix, сплиты, статус-бар)? [Y/n]: " choice
+    choice=${choice:-y}
+    [ "$choice" = "y" ] && INSTALL_TMUX_CONF=true
 
-read -p "Автосохранение сессий (resurrect + continuum)? [Y/n]: " choice
-choice=${choice:-y}
-INSTALL_PLUGINS=false
-[ "$choice" = "y" ] && INSTALL_PLUGINS=true
+    read -p "Меню сессий при логине? [Y/n]: " choice
+    choice=${choice:-y}
+    [ "$choice" = "y" ] && INSTALL_MENU=true
+
+    read -p "Автосохранение сессий (resurrect + continuum)? [Y/n]: " choice
+    choice=${choice:-y}
+    [ "$choice" = "y" ] && INSTALL_PLUGINS=true
+fi
 
 INSTALL_AGENT_PERMS=false
 if command -v claude &>/dev/null || [ "$INSTALL_CLAUDE" = true ]; then
@@ -206,6 +231,7 @@ header "ПЛАН УСТАНОВКИ"
 [ "$INSTALL_CLAUDE" = true ] && echo "  → Установить Claude Code"
 [ "$INSTALL_GIT" = true ] && echo "  → Установить git"
 [ "$INSTALL_ALIASES" = true ] && echo "  → Алиасы в $SHELL_RC"
+[ "$INSTALL_PROMPT" = true ] && echo "  → Короткий промпт"
 [ "$INSTALL_TMUX_CONF" = true ] && echo "  → Конфиг ~/.tmux.conf"
 [ "$INSTALL_MENU" = true ] && echo "  → Меню сессий при логине"
 [ "$INSTALL_PLUGINS" = true ] && echo "  → Плагины resurrect + continuum"
@@ -263,17 +289,36 @@ install_pkg() {
 
 if [ "$INSTALL_TMUX" = true ]; then
     header "УСТАНОВКА TMUX"
-    install_pkg tmux && info "tmux установлен: $(tmux -V)" || error "Не удалось установить tmux"
+    if install_pkg tmux; then
+        info "tmux установлен: $(tmux -V)"
+    else
+        error "Не удалось установить tmux"
+        INSTALL_TMUX_CONF=false
+        INSTALL_PLUGINS=false
+        INSTALL_MENU=false
+        warn "Конфиг tmux, плагины и меню отключены"
+    fi
 fi
 
 if [ "$INSTALL_GIT" = true ]; then
     header "УСТАНОВКА GIT"
-    install_pkg git && info "git установлен" || error "Не удалось установить git"
+    if install_pkg git; then
+        info "git установлен"
+    else
+        error "Не удалось установить git"
+        INSTALL_PLUGINS=false
+        warn "Плагины отключены (нет git)"
+    fi
 fi
 
 if [ "$INSTALL_CLAUDE" = true ]; then
     header "УСТАНОВКА CLAUDE CODE"
-    curl -fsSL https://claude.ai/install.sh | bash && info "Claude Code: $(claude --version 2>/dev/null)" || error "Не удалось установить Claude Code"
+    if curl -fsSL https://claude.ai/install.sh | bash; then
+        info "Claude Code: $(claude --version 2>/dev/null)"
+    else
+        error "Не удалось установить Claude Code"
+        INSTALL_AGENT_PERMS=false
+    fi
 fi
 
 if [ "$INSTALL_AGENT_PERMS" = true ]; then
@@ -317,7 +362,11 @@ if [ "$INSTALL_ALIASES" = true ] || [ "$INSTALL_MENU" = true ]; then
 
     # Удаляем старый блок если есть (для идемпотентности)
     if grep -q '# === ULTRA TERMINAL CONFIG ===' "$SHELL_RC" 2>/dev/null; then
-        sed -i '/# === ULTRA TERMINAL CONFIG ===/,/# === END ULTRA TERMINAL CONFIG ===/d' "$SHELL_RC"
+        if [[ "$(uname)" == "Darwin" ]]; then
+            sed -i '' '/# === ULTRA TERMINAL CONFIG ===/,/# === END ULTRA TERMINAL CONFIG ===/d' "$SHELL_RC"
+        else
+            sed -i '/# === ULTRA TERMINAL CONFIG ===/,/# === END ULTRA TERMINAL CONFIG ===/d' "$SHELL_RC"
+        fi
         info "Старый конфиг удалён из $SHELL_RC"
     fi
 
@@ -330,12 +379,18 @@ BLOCK_START
 
     # Алиасы
     if [ "$INSTALL_ALIASES" = true ]; then
-        cat >> "$SHELL_RC" << ALIASES
+        # Tmux-алиасы только для удалённых машин
+        if [ "$IS_REMOTE" = true ]; then
+            cat >> "$SHELL_RC" << TMUX_ALIASES
 
 # Tmux
 alias tl='tmux ls'
 alias tk='tmux kill-session -t'
 alias td='tmux detach'
+TMUX_ALIASES
+        fi
+
+        cat >> "$SHELL_RC" << ALIASES
 
 # Claude Code
 alias c='claude'
@@ -362,6 +417,11 @@ p() {
     fi
     cd "$PROJECTS_DIR/\$1" && ls
 }
+ALIASES
+
+        # np: на удалённой — mkdir + tmux окно, на локальной — mkdir + cd
+        if [ "$IS_REMOTE" = true ]; then
+            cat >> "$SHELL_RC" << NP_REMOTE
 np() {
     if [ -z "\$1" ]; then
         echo "Использование: np <имя_проекта>"
@@ -374,17 +434,43 @@ np() {
         tmux new -s "\$1" -n "\$1" -c "$PROJECTS_DIR/\$1"
     fi
 }
+NP_REMOTE
+        else
+            cat >> "$SHELL_RC" << NP_LOCAL
+np() {
+    if [ -z "\$1" ]; then
+        echo "Использование: np <имя_проекта>"
+        return 1
+    fi
+    mkdir -p "$PROJECTS_DIR/\$1"
+    cd "$PROJECTS_DIR/\$1"
+}
+NP_LOCAL
+        fi
+
+        cat >> "$SHELL_RC" << ALIASES_END
 
 # Автокомплит для p и np
-_opt_complete() {
-    local cur="\${COMP_WORDS[COMP_CWORD]}"
-    COMPREPLY=(\$(compgen -W "\$(ls -1 "$PROJECTS_DIR" 2>/dev/null)" -- "\$cur"))
-}
-complete -F _opt_complete p np
+if [ -n "\$ZSH_VERSION" ]; then
+    compctl -W "$PROJECTS_DIR" -/ p np
+elif [ -n "\$BASH_VERSION" ]; then
+    _opt_complete() {
+        local cur="\${COMP_WORDS[COMP_CWORD]}"
+        COMPREPLY=(\$(compgen -W "\$(ls -1 "$PROJECTS_DIR" 2>/dev/null)" -- "\$cur"))
+    }
+    complete -F _opt_complete p np
+fi
+ALIASES_END
 
-# Короткий промпт
-PS1='\W → '
-ALIASES
+        # Короткий промпт (опционально)
+        if [ "$INSTALL_PROMPT" = true ]; then
+            if [ "$CURRENT_SHELL" = "zsh" ]; then
+                echo "PS1='%1~ → '" >> "$SHELL_RC"
+            else
+                echo "PS1='\W → '" >> "$SHELL_RC"
+            fi
+            info "Промпт изменён"
+        fi
 
         info "Алиасы добавлены в $SHELL_RC"
     fi
@@ -578,7 +664,8 @@ fi
 # ============================================
 header "ГОТОВО!"
 
-echo -e "
+if [ "$IS_REMOTE" = true ]; then
+    echo -e "
 ${BOLD}Что дальше:${NC}
 
   source $SHELL_RC    — применить алиасы сейчас
@@ -599,3 +686,20 @@ ${BOLD}Шпаргалка:${NC}
   p имя        перейти в проект
   cr           продолжить Claude Code
 "
+else
+    echo -e "
+${BOLD}Что дальше:${NC}
+
+  source $SHELL_RC    — применить алиасы сейчас
+
+${BOLD}Бэкапы:${NC} $BACKUP_DIR
+${BOLD}Откат:${NC}  cp $BACKUP_DIR/* ~/
+
+${BOLD}Шпаргалка:${NC}
+  np имя       новый проект (mkdir + cd)
+  p имя        перейти в проект
+  c            запустить Claude Code
+  cr           продолжить Claude Code
+  q вопрос     быстрый вопрос Claude
+"
+fi
