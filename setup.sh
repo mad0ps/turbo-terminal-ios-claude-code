@@ -9,6 +9,13 @@ set -euo pipefail
 
 trap 'error "Скрипт прерван (строка $LINENO)"' ERR
 
+# Dry-run режим
+DRY_RUN=false
+if [[ "${1:-}" == "--dry-run" ]]; then
+    DRY_RUN=true
+    echo -e "\033[1;33m[DRY-RUN] Пробный запуск — ничего не будет изменено\033[0m"
+fi
+
 # Цвета
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
@@ -130,7 +137,11 @@ if [ "$IS_REMOTE" = true ]; then
 else
     DEFAULT_PROJECTS="$HOME/Projects"
 fi
-read -p "Путь к проектам [$DEFAULT_PROJECTS]: " PROJECTS_DIR
+if [ -t 0 ]; then
+    read -e -p "Путь к проектам [$DEFAULT_PROJECTS]: " PROJECTS_DIR
+else
+    read -p "Путь к проектам [$DEFAULT_PROJECTS]: " PROJECTS_DIR
+fi
 PROJECTS_DIR=${PROJECTS_DIR:-$DEFAULT_PROJECTS}
 
 # Раскрытие ~ в путях
@@ -144,8 +155,12 @@ else
     read -p "Создать? [Y/n]: " create_dir
     create_dir=${create_dir:-y}
     if [ "$create_dir" = "y" ]; then
-        mkdir -p "$PROJECTS_DIR"
-        info "Создана: $PROJECTS_DIR"
+        if [ "$DRY_RUN" = true ]; then
+            info "Будет создана: $PROJECTS_DIR"
+        else
+            mkdir -p "$PROJECTS_DIR"
+            info "Создана: $PROJECTS_DIR"
+        fi
     fi
 fi
 
@@ -181,6 +196,39 @@ read -p "Алиасы и функции (навигация, Claude Code)? [Y/n]
 choice=${choice:-y}
 INSTALL_ALIASES=false
 [ "$choice" = "y" ] && INSTALL_ALIASES=true
+
+# Имена функций навигации (по умолчанию p и np)
+NAV_P="p"
+NAV_NP="np"
+
+if [ "$INSTALL_ALIASES" = true ] && [ -f "$SHELL_RC" ]; then
+    # Проверяем конфликт p (ищем alias/function вне нашего блока)
+    existing_p=$(sed '/# === ULTRA TERMINAL CONFIG ===/,/# === END ULTRA TERMINAL CONFIG ===/d' "$SHELL_RC" 2>/dev/null | grep -E "^alias p=|^alias p |^p\(\)" | head -1 || true)
+    if [ -n "$existing_p" ]; then
+        warn "\"p\" уже занято: $existing_p"
+        while true; do
+            read -p "Новое имя для навигации по проектам [p]: " NAV_P
+            NAV_P=${NAV_P:-p}
+            if [[ "$NAV_P" =~ ^[a-zA-Z_][a-zA-Z0-9_]*$ ]]; then
+                break
+            fi
+            warn "Имя может содержать только буквы, цифры и _"
+        done
+    fi
+    # Проверяем конфликт np
+    existing_np=$(sed '/# === ULTRA TERMINAL CONFIG ===/,/# === END ULTRA TERMINAL CONFIG ===/d' "$SHELL_RC" 2>/dev/null | grep -E "^alias np=|^alias np |^np\(\)" | head -1 || true)
+    if [ -n "$existing_np" ]; then
+        warn "\"np\" уже занято: $existing_np"
+        while true; do
+            read -p "Новое имя для создания проектов [np]: " NAV_NP
+            NAV_NP=${NAV_NP:-np}
+            if [[ "$NAV_NP" =~ ^[a-zA-Z_][a-zA-Z0-9_]*$ ]]; then
+                break
+            fi
+            warn "Имя может содержать только буквы, цифры и _"
+        done
+    fi
+fi
 
 read -p "Короткий промпт (заменить на 'папка → ')? [y/N]: " choice
 choice=${choice:-n}
@@ -230,7 +278,16 @@ header "ПЛАН УСТАНОВКИ"
 [ "$INSTALL_TMUX" = true ] && echo "  → Установить tmux"
 [ "$INSTALL_CLAUDE" = true ] && echo "  → Установить Claude Code"
 [ "$INSTALL_GIT" = true ] && echo "  → Установить git"
-[ "$INSTALL_ALIASES" = true ] && echo "  → Алиасы в $SHELL_RC"
+if [ "$INSTALL_ALIASES" = true ]; then
+    renamed=""
+    [ "$NAV_P" != "p" ] && renamed="p→$NAV_P"
+    [ "$NAV_NP" != "np" ] && renamed="${renamed:+$renamed, }np→$NAV_NP"
+    if [ -n "$renamed" ]; then
+        echo "  → Алиасы в $SHELL_RC ($renamed)"
+    else
+        echo "  → Алиасы в $SHELL_RC"
+    fi
+fi
 [ "$INSTALL_PROMPT" = true ] && echo "  → Короткий промпт"
 [ "$INSTALL_TMUX_CONF" = true ] && echo "  → Конфиг ~/.tmux.conf"
 [ "$INSTALL_MENU" = true ] && echo "  → Меню сессий при логине"
@@ -241,6 +298,11 @@ echo ""
 if [ "$INSTALL_TMUX" = true ] || [ "$INSTALL_GIT" = true ]; then
     echo -e "${YELLOW}[!]${NC} Может потребоваться пароль sudo для установки пакетов"
     echo ""
+fi
+
+if [ "$DRY_RUN" = true ]; then
+    echo -e "\n\033[1;33m[DRY-RUN] Конец пробного запуска. Для реальной установки: bash setup.sh\033[0m"
+    exit 0
 fi
 
 read -p "Поехали? [Y/n]: " confirm
@@ -404,7 +466,8 @@ alias ...='cd ../..'
 alias l='ls -la'
 
 # Проекты ($PROJECTS_DIR)
-p() {
+unalias $NAV_P $NAV_NP 2>/dev/null
+$NAV_P() {
     if [ -z "\$1" ]; then
         echo "Доступные проекты:"
         ls -1 "$PROJECTS_DIR"
@@ -422,9 +485,9 @@ ALIASES
         # np: на удалённой — mkdir + tmux окно, на локальной — mkdir + cd
         if [ "$IS_REMOTE" = true ]; then
             cat >> "$SHELL_RC" << NP_REMOTE
-np() {
+$NAV_NP() {
     if [ -z "\$1" ]; then
-        echo "Использование: np <имя_проекта>"
+        echo "Использование: $NAV_NP <имя_проекта>"
         return 1
     fi
     mkdir -p "$PROJECTS_DIR/\$1"
@@ -437,9 +500,9 @@ np() {
 NP_REMOTE
         else
             cat >> "$SHELL_RC" << NP_LOCAL
-np() {
+$NAV_NP() {
     if [ -z "\$1" ]; then
-        echo "Использование: np <имя_проекта>"
+        echo "Использование: $NAV_NP <имя_проекта>"
         return 1
     fi
     mkdir -p "$PROJECTS_DIR/\$1"
@@ -450,15 +513,16 @@ NP_LOCAL
 
         cat >> "$SHELL_RC" << ALIASES_END
 
-# Автокомплит для p и np
+# Автокомплит для $NAV_P и $NAV_NP
 if [ -n "\$ZSH_VERSION" ]; then
-    compctl -W "$PROJECTS_DIR" -/ p np
+    _nav_projects() { compadd \$(ls -1 "$PROJECTS_DIR" 2>/dev/null); }
+    compdef _nav_projects $NAV_P $NAV_NP
 elif [ -n "\$BASH_VERSION" ]; then
     _opt_complete() {
         local cur="\${COMP_WORDS[COMP_CWORD]}"
         COMPREPLY=(\$(compgen -W "\$(ls -1 "$PROJECTS_DIR" 2>/dev/null)" -- "\$cur"))
     }
-    complete -F _opt_complete p np
+    complete -F _opt_complete $NAV_P $NAV_NP
 fi
 ALIASES_END
 
@@ -611,16 +675,22 @@ if [ "$INSTALL_PLUGINS" = true ]; then
 
     if [ ! -d "$HOME/.tmux/plugins/tmux-resurrect/.git" ]; then
         rm -rf "$HOME/.tmux/plugins/tmux-resurrect"
-        git clone -q https://github.com/tmux-plugins/tmux-resurrect "$HOME/.tmux/plugins/tmux-resurrect" && \
-            info "tmux-resurrect установлен" || error "Ошибка при клонировании tmux-resurrect"
+        if git clone -q https://github.com/tmux-plugins/tmux-resurrect "$HOME/.tmux/plugins/tmux-resurrect"; then
+            info "tmux-resurrect установлен"
+        else
+            error "Ошибка при клонировании tmux-resurrect"
+        fi
     else
         info "tmux-resurrect уже есть"
     fi
 
     if [ ! -d "$HOME/.tmux/plugins/tmux-continuum/.git" ]; then
         rm -rf "$HOME/.tmux/plugins/tmux-continuum"
-        git clone -q https://github.com/tmux-plugins/tmux-continuum "$HOME/.tmux/plugins/tmux-continuum" && \
-            info "tmux-continuum установлен" || error "Ошибка при клонировании tmux-continuum"
+        if git clone -q https://github.com/tmux-plugins/tmux-continuum "$HOME/.tmux/plugins/tmux-continuum"; then
+            info "tmux-continuum установлен"
+        else
+            error "Ошибка при клонировании tmux-continuum"
+        fi
     else
         info "tmux-continuum уже есть"
     fi
@@ -682,8 +752,8 @@ ${BOLD}Шпаргалка:${NC}
   Ctrl+A n     новое окно
   Ctrl+A d     detach
   Ctrl+A g     popup окно
-  np имя       новый проект (mkdir + окно)
-  p имя        перейти в проект
+  $NAV_NP имя       новый проект (mkdir + окно)
+  $NAV_P имя        перейти в проект
   cr           продолжить Claude Code
 "
 else
@@ -696,8 +766,8 @@ ${BOLD}Бэкапы:${NC} $BACKUP_DIR
 ${BOLD}Откат:${NC}  cp $BACKUP_DIR/* ~/
 
 ${BOLD}Шпаргалка:${NC}
-  np имя       новый проект (mkdir + cd)
-  p имя        перейти в проект
+  $NAV_NP имя       новый проект (mkdir + cd)
+  $NAV_P имя        перейти в проект
   c            запустить Claude Code
   cr           продолжить Claude Code
   q вопрос     быстрый вопрос Claude
