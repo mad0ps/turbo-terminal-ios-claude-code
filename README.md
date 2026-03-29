@@ -32,6 +32,7 @@ git clone https://github.com/mad0ps/turbo-terminal-ios-claude-code.git /tmp/turb
 | **Навигация** | `p имя` — перейти в проект, `np имя` — создать папку + tmux-окно (с автокомплитом) |
 | **Меню логина** | При SSH-подключении показывает сессии с именами окон |
 | **Автосохранение** | tmux-resurrect + continuum — сессии сохраняются каждые 10 минут |
+| **Скилы Claude Code** | Кастомные скилы, хуки и конфиг из [turbo-claude-code](https://github.com/mad0ps/turbo-claude-code) (опционально) |
 | **Разрешения агентов** | Опциональная настройка `~/.claude/settings.json` (по умолчанию выключено) |
 
 **Локальная машина** (macOS) — только самое нужное:
@@ -41,6 +42,7 @@ git clone https://github.com/mad0ps/turbo-terminal-ios-claude-code.git /tmp/turb
 | **Claude Code** | Установка если не найден |
 | **Алиасы** | `c`, `cr`, `cc`, `q` — быстрый доступ к Claude Code |
 | **Навигация** | `p имя` — перейти в проект, `np имя` — создать папку + cd (без tmux) |
+| **Скилы Claude Code** | Кастомные скилы, хуки и конфиг из [turbo-claude-code](https://github.com/mad0ps/turbo-claude-code) (опционально) |
 | **Разрешения агентов** | Опционально |
 
 Определение режима — автоматическое по `$SSH_CONNECTION`. Каждый компонент ставится по выбору.
