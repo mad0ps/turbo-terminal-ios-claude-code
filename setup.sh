@@ -259,6 +259,14 @@ if command -v claude &>/dev/null || [ "$INSTALL_CLAUDE" = true ]; then
     [ "$choice" = "y" ] && INSTALL_AGENT_PERMS=true
 fi
 
+INSTALL_TURBO=false
+if command -v git &>/dev/null || [ "$GIT_INSTALLED" = true ]; then
+    echo ""
+    read -p "Скилы и конфиг Claude Code (turbo-claude-code)? [Y/n]: " choice
+    choice=${choice:-y}
+    [ "$choice" = "y" ] && INSTALL_TURBO=true
+fi
+
 # Проверка git для плагинов
 if [ "$INSTALL_PLUGINS" = true ] && [ "$GIT_INSTALLED" = false ]; then
     warn "Для плагинов нужен git"
@@ -293,6 +301,7 @@ fi
 [ "$INSTALL_MENU" = true ] && echo "  → Меню сессий при логине"
 [ "$INSTALL_PLUGINS" = true ] && echo "  → Плагины resurrect + continuum"
 [ "$INSTALL_AGENT_PERMS" = true ] && echo "  → Расширенные разрешения Claude Code (без подтверждений)"
+[ "$INSTALL_TURBO" = true ] && echo "  → Скилы и конфиг Claude Code (turbo-claude-code)"
 echo ""
 
 if [ "$INSTALL_TMUX" = true ] || [ "$INSTALL_GIT" = true ]; then
@@ -410,6 +419,23 @@ if [ "$INSTALL_AGENT_PERMS" = true ]; then
 }
 CLAUDE_SETTINGS
     info "Расширенные разрешения установлены в ~/.claude/settings.json"
+fi
+
+if [ "$INSTALL_TURBO" = true ]; then
+    header "CLAUDE CODE СКИЛЫ"
+    TURBO_DIR="$HOME/turbo-claude-code"
+    if [ -d "$TURBO_DIR/.git" ]; then
+        info "Обновляем репо"
+        git -C "$TURBO_DIR" pull --ff-only
+    else
+        info "Клонируем turbo-claude-code"
+        git clone https://github.com/mad0ps/turbo-claude-code.git "$TURBO_DIR"
+    fi
+    if [ -f "$TURBO_DIR/install.sh" ]; then
+        bash "$TURBO_DIR/install.sh"
+    else
+        error "install.sh не найден в $TURBO_DIR"
+    fi
 fi
 
 # ============================================
