@@ -59,20 +59,34 @@ EOF
 cat >> ~/.bashrc << 'EOF'
 
 # Проекты (/opt)
+unalias p np 2>/dev/null
 p() {
-    if [ -z "$1" ]; then
+    if [ -z "${1:-}" ]; then
         echo "Доступные проекты:"
         ls -1 /opt
         return
     fi
-    if [ ! -d "/opt/$1" ]; then
-        echo "Проект не найден: $1"
+    local proj="$*"
+    if [ ! -d "/opt/$proj" ]; then
+        echo "Проект не найден: $proj"
         echo "Доступные: $(ls -1 /opt)"
         return 1
     fi
-    cd "/opt/$1" && ls
+    cd "/opt/$proj" && ls
 }
-np() { tmux new -s "$1" -c "/opt/$1"; }
+np() {
+    if [ -z "${1:-}" ]; then
+        echo "Использование: np <имя_проекта>"
+        return 1
+    fi
+    local proj="$*"
+    mkdir -p "/opt/$proj"
+    if [ -n "$TMUX" ]; then
+        tmux new-window -n "$proj" -c "/opt/$proj"
+    else
+        tmux new -s "$proj" -n "$proj" -c "/opt/$proj"
+    fi
+}
 
 # Автокомплит для p и np
 _opt_complete() {
@@ -89,7 +103,7 @@ EOF
 ### Шаг 5 — .bashrc часть 3 (меню при логине)
 
 ```bash
-cat >> ~/.bashrc << 'EOF'
+cat >> ~/.bashrc << 'MENU'
 
 # Меню tmux при логине
 if [ -z "$TMUX" ]; then
@@ -126,7 +140,9 @@ if [ -z "$TMUX" ]; then
         esac
     fi
 fi
-EOF
+
+# === END ULTRA TERMINAL CONFIG ===
+MENU
 ```
 
 ### Шаг 6 — .tmux.conf часть 1 (базовое + внешний вид)
@@ -194,16 +210,16 @@ EOF
 
 ```bash
 mkdir -p ~/.tmux/plugins
-git clone https://github.com/tmux-plugins/tmux-resurrect ~/.tmux/plugins/tmux-resurrect
-git clone https://github.com/tmux-plugins/tmux-continuum ~/.tmux/plugins/tmux-continuum
+git clone --depth=1 https://github.com/tmux-plugins/tmux-resurrect ~/.tmux/plugins/tmux-resurrect
+git clone --depth=1 https://github.com/tmux-plugins/tmux-continuum ~/.tmux/plugins/tmux-continuum
 ```
 
 ```bash
 cat >> ~/.tmux.conf << 'EOF'
 
 # Resurrect + Continuum — автосохранение
-run-shell ~/.tmux/plugins/tmux-resurrect/resurrect.tmux
-run-shell ~/.tmux/plugins/tmux-continuum/continuum.tmux
+run-shell "~/.tmux/plugins/tmux-resurrect/resurrect.tmux"
+run-shell "~/.tmux/plugins/tmux-continuum/continuum.tmux"
 set -g @continuum-save-interval '10'
 set -g @continuum-restore 'on'
 set -g @resurrect-save-shell-history 'off'
@@ -214,7 +230,7 @@ EOF
 
 ```bash
 crontab -l 2>/dev/null | grep -q 'tmux/resurrect' || \
-  (crontab -l 2>/dev/null; echo "0 */6 * * * find ~/.tmux/resurrect -name '*.txt' ! -name 'last' -mmin +60 -delete") | crontab -
+  (crontab -l 2>/dev/null; echo "0 */6 * * * find \$HOME/.tmux/resurrect -name '*.txt' ! -name 'last' -mmin +60 -delete") | crontab -
 ```
 
 ### Шаг 9 — Применить

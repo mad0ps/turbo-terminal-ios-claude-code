@@ -3,10 +3,10 @@
 # ============================================
 # iPhone Terminal Ultra Setup
 # Interactive installer for tmux + aliases
-# Version: 1.1.0
+# Version: 1.2.0
 # ============================================
 
-VERSION="1.1.0"
+VERSION="1.2.0"
 
 set -euo pipefail
 
@@ -35,6 +35,17 @@ header() { echo -e "\n${CYAN}${BOLD}=== $1 ===${NC}\n"; }
 # ============================================
 # АНАЛИЗ СИСТЕМЫ
 # ============================================
+# Предупреждение о запуске внутри tmux
+if [ -n "${TMUX:-}" ]; then
+    warn "Скрипт запущен внутри tmux — рекомендуется запускать вне tmux"
+    read -p "Продолжить? [y/N]: " tmux_confirm
+    tmux_confirm=${tmux_confirm:-n}
+    if [ "$tmux_confirm" != "y" ]; then
+        echo "Выйди из tmux (Ctrl+A d) и запусти заново."
+        exit 0
+    fi
+fi
+
 header "АНАЛИЗ СИСТЕМЫ"
 
 # OS
@@ -70,6 +81,7 @@ fi
 CURRENT_SHELL=$(basename "$SHELL")
 info "Shell: $CURRENT_SHELL ($SHELL)"
 
+FISH_DETECTED=false
 case "$CURRENT_SHELL" in
     bash)
         if [ -f "$HOME/.bash_profile" ] && ! grep -q 'bashrc' "$HOME/.bash_profile" 2>/dev/null; then
@@ -83,7 +95,9 @@ case "$CURRENT_SHELL" in
         ;;
     fish)
         SHELL_RC="$HOME/.config/fish/config.fish"
-        warn "Fish shell: алиасы и меню будут в bash-синтаксе — может потребоваться ручная адаптация"
+        warn "Fish shell обнаружен — алиасы и меню пропущены (несовместимый синтаксис)"
+        warn "Для fish используй ручную установку: iphone-terminal-setup.md"
+        FISH_DETECTED=true
         ;;
     *)
         warn "Неизвестный shell: $CURRENT_SHELL, используем ~/.profile"
@@ -349,16 +363,45 @@ info "Бэкапы в: $BACKUP_DIR"
 # УСТАНОВКА ПАКЕТОВ
 # ============================================
 
+APT_UPDATED=false
 install_pkg() {
     local pkg="$1"
     case "$PKG" in
-        apt) sudo apt-get update -qq && sudo apt-get install -y -qq "$pkg";;
+        apt)
+            if [ "$APT_UPDATED" = false ]; then
+                sudo apt-get update -qq
+                APT_UPDATED=true
+            fi
+            sudo apt-get install -y -qq "$pkg"
+            ;;
         yum) sudo yum install -y -q "$pkg";;
         dnf) sudo dnf install -y -q "$pkg";;
         apk) sudo apk add --quiet "$pkg";;
         brew) brew install "$pkg";;
         *) error "Не могу установить $pkg — неизвестный package manager"; return 1;;
     esac
+}
+
+write_default_settings() {
+    cat > "$1" << 'CLAUDE_SETTINGS'
+{
+  "permissions": {
+    "allow": [
+      "Bash",
+      "Edit",
+      "Glob",
+      "Grep",
+      "NotebookEdit",
+      "Read",
+      "Skill",
+      "TodoWrite",
+      "WebFetch",
+      "WebSearch",
+      "Write"
+    ]
+  }
+}
+CLAUDE_SETTINGS
 }
 
 if [ "$INSTALL_TMUX" = true ]; then
@@ -419,71 +462,18 @@ with open('$SETTINGS_FILE', 'w') as f:
     json.dump(cfg, f, indent=2)
     f.write('\n')
 " && info "Разрешения обновлены в ~/.claude/settings.json (существующие настройки сохранены)" \
-      || { warn "Не удалось обновить settings.json, перезаписываем"; cat > "$SETTINGS_FILE" << 'CLAUDE_SETTINGS'
-{
-  "permissions": {
-    "allow": [
-      "Bash",
-      "Edit",
-      "Glob",
-      "Grep",
-      "NotebookEdit",
-      "Read",
-      "Skill",
-      "TodoWrite",
-      "WebFetch",
-      "WebSearch",
-      "Write"
-    ]
-  }
-}
-CLAUDE_SETTINGS
-        info "Расширенные разрешения установлены в ~/.claude/settings.json";
+      || { warn "Не удалось обновить settings.json, перезаписываем"
+            write_default_settings "$SETTINGS_FILE"
+            info "Расширенные разрешения установлены в ~/.claude/settings.json";
     }
     elif [ -f "$SETTINGS_FILE" ]; then
         # python3 не найден — бэкапим и перезаписываем
         cp "$SETTINGS_FILE" "$BACKUP_DIR/settings.json"
         warn "python3 не найден — существующий settings.json сохранён в бэкап, перезаписываем"
-        cat > "$SETTINGS_FILE" << 'CLAUDE_SETTINGS'
-{
-  "permissions": {
-    "allow": [
-      "Bash",
-      "Edit",
-      "Glob",
-      "Grep",
-      "NotebookEdit",
-      "Read",
-      "Skill",
-      "TodoWrite",
-      "WebFetch",
-      "WebSearch",
-      "Write"
-    ]
-  }
-}
-CLAUDE_SETTINGS
+        write_default_settings "$SETTINGS_FILE"
         info "Расширенные разрешения установлены в ~/.claude/settings.json"
     else
-        cat > "$SETTINGS_FILE" << 'CLAUDE_SETTINGS'
-{
-  "permissions": {
-    "allow": [
-      "Bash",
-      "Edit",
-      "Glob",
-      "Grep",
-      "NotebookEdit",
-      "Read",
-      "Skill",
-      "TodoWrite",
-      "WebFetch",
-      "WebSearch",
-      "Write"
-    ]
-  }
-}
-CLAUDE_SETTINGS
+        write_default_settings "$SETTINGS_FILE"
         info "Расширенные разрешения установлены в ~/.claude/settings.json"
     fi
 fi
@@ -493,10 +483,10 @@ if [ "$INSTALL_TURBO" = true ]; then
     TURBO_DIR="$HOME/turbo-claude-code"
     if [ -d "$TURBO_DIR/.git" ]; then
         info "Обновляем репо"
-        git -C "$TURBO_DIR" pull --ff-only
+        git -C "$TURBO_DIR" pull --ff-only || warn "Не удалось обновить (возможно есть локальные изменения), пропускаем"
     else
         info "Клонируем turbo-claude-code"
-        git clone https://github.com/mad0ps/turbo-claude-code.git "$TURBO_DIR"
+        git clone --depth=1 https://github.com/mad0ps/turbo-claude-code.git "$TURBO_DIR"
     fi
     if [ -f "$TURBO_DIR/install.sh" ]; then
         bash "$TURBO_DIR/install.sh"
@@ -508,6 +498,11 @@ fi
 # ============================================
 # АЛИАСЫ + МЕНЮ ЛОГИНА
 # ============================================
+
+if [ "$FISH_DETECTED" = true ]; then
+    INSTALL_ALIASES=false
+    INSTALL_MENU=false
+fi
 
 if [ "$INSTALL_ALIASES" = true ] || [ "$INSTALL_MENU" = true ]; then
     header "АЛИАСЫ И МЕНЮ"
@@ -580,27 +575,29 @@ ALIASES
         if [ "$IS_REMOTE" = true ]; then
             cat >> "$SHELL_RC" << NP_REMOTE
 $NAV_NP() {
-    if [ -z "\$1" ]; then
+    if [ -z "\${1:-}" ]; then
         echo "Использование: $NAV_NP <имя_проекта>"
         return 1
     fi
-    mkdir -p "$PROJECTS_DIR/\$1"
+    local proj="\$*"
+    mkdir -p "$PROJECTS_DIR/\$proj"
     if [ -n "\$TMUX" ]; then
-        tmux new-window -n "\$1" -c "$PROJECTS_DIR/\$1"
+        tmux new-window -n "\$proj" -c "$PROJECTS_DIR/\$proj"
     else
-        tmux new -s "\$1" -n "\$1" -c "$PROJECTS_DIR/\$1"
+        tmux new -s "\$proj" -n "\$proj" -c "$PROJECTS_DIR/\$proj"
     fi
 }
 NP_REMOTE
         else
             cat >> "$SHELL_RC" << NP_LOCAL
 $NAV_NP() {
-    if [ -z "\$1" ]; then
+    if [ -z "\${1:-}" ]; then
         echo "Использование: $NAV_NP <имя_проекта>"
         return 1
     fi
-    mkdir -p "$PROJECTS_DIR/\$1"
-    cd "$PROJECTS_DIR/\$1"
+    local proj="\$*"
+    mkdir -p "$PROJECTS_DIR/\$proj"
+    cd "$PROJECTS_DIR/\$proj"
 }
 NP_LOCAL
         fi
@@ -769,7 +766,7 @@ if [ "$INSTALL_PLUGINS" = true ]; then
 
     if [ ! -d "$HOME/.tmux/plugins/tmux-resurrect/.git" ]; then
         rm -rf "$HOME/.tmux/plugins/tmux-resurrect"
-        if git clone -q https://github.com/tmux-plugins/tmux-resurrect "$HOME/.tmux/plugins/tmux-resurrect"; then
+        if git clone -q --depth=1 https://github.com/tmux-plugins/tmux-resurrect "$HOME/.tmux/plugins/tmux-resurrect"; then
             info "tmux-resurrect установлен"
         else
             error "Ошибка при клонировании tmux-resurrect"
@@ -780,7 +777,7 @@ if [ "$INSTALL_PLUGINS" = true ]; then
 
     if [ ! -d "$HOME/.tmux/plugins/tmux-continuum/.git" ]; then
         rm -rf "$HOME/.tmux/plugins/tmux-continuum"
-        if git clone -q https://github.com/tmux-plugins/tmux-continuum "$HOME/.tmux/plugins/tmux-continuum"; then
+        if git clone -q --depth=1 https://github.com/tmux-plugins/tmux-continuum "$HOME/.tmux/plugins/tmux-continuum"; then
             info "tmux-continuum установлен"
         else
             error "Ошибка при клонировании tmux-continuum"
