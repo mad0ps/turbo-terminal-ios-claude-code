@@ -395,30 +395,70 @@ fi
 if [ "$INSTALL_AGENT_PERMS" = true ]; then
     header "РАЗРЕШЕНИЯ CLAUDE CODE"
     mkdir -p "$HOME/.claude"
-    if [ -f "$HOME/.claude/settings.json" ]; then
-        cp "$HOME/.claude/settings.json" "$BACKUP_DIR/settings.json"
-        warn "Существующий settings.json сохранён в бэкап"
-    fi
-    cat > "$HOME/.claude/settings.json" << 'CLAUDE_SETTINGS'
+    SETTINGS_FILE="$HOME/.claude/settings.json"
+    REQUIRED_PERMS='["Bash","Read","Edit","Write","Glob","Grep","WebFetch","WebSearch","NotebookEdit","TodoWrite","Skill"]'
+
+    if [ -f "$SETTINGS_FILE" ]; then
+        cp "$SETTINGS_FILE" "$BACKUP_DIR/settings.json"
+        # Мержим permissions в существующий файл, не трогая остальные настройки
+        python3 -c "
+import json, sys
+with open('$SETTINGS_FILE') as f:
+    cfg = json.load(f)
+required = json.loads('$REQUIRED_PERMS')
+perms = cfg.setdefault('permissions', {})
+existing = set(perms.get('allow', []))
+# Заменяем устаревший 'Task' на 'TodoWrite'
+existing.discard('Task')
+existing.update(required)
+perms['allow'] = sorted(existing)
+with open('$SETTINGS_FILE', 'w') as f:
+    json.dump(cfg, f, indent=2)
+    f.write('\n')
+" && info "Разрешения обновлены в ~/.claude/settings.json (существующие настройки сохранены)" \
+      || { warn "Не удалось обновить settings.json, перезаписываем"; cat > "$SETTINGS_FILE" << 'CLAUDE_SETTINGS'
 {
   "permissions": {
     "allow": [
       "Bash",
-      "Read",
       "Edit",
-      "Write",
       "Glob",
       "Grep",
+      "NotebookEdit",
+      "Read",
+      "Skill",
+      "TodoWrite",
       "WebFetch",
       "WebSearch",
-      "NotebookEdit",
-      "Task",
-      "Skill"
+      "Write"
     ]
   }
 }
 CLAUDE_SETTINGS
-    info "Расширенные разрешения установлены в ~/.claude/settings.json"
+        info "Расширенные разрешения установлены в ~/.claude/settings.json";
+    }
+    else
+        cat > "$SETTINGS_FILE" << 'CLAUDE_SETTINGS'
+{
+  "permissions": {
+    "allow": [
+      "Bash",
+      "Edit",
+      "Glob",
+      "Grep",
+      "NotebookEdit",
+      "Read",
+      "Skill",
+      "TodoWrite",
+      "WebFetch",
+      "WebSearch",
+      "Write"
+    ]
+  }
+}
+CLAUDE_SETTINGS
+        info "Расширенные разрешения установлены в ~/.claude/settings.json"
+    fi
 fi
 
 if [ "$INSTALL_TURBO" = true ]; then

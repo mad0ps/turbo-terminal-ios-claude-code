@@ -46,7 +46,7 @@ bash setup.sh
 - `p` без аргументов показывает список проектов, с несуществующим — подсказывает доступные
 - Автосохранение сессий через tmux-continuum каждые 10 минут; крон чистит сохранения старше 60 минут
 - Claude Code ставится через `curl -fsSL https://claude.ai/install.sh | bash` если не найден
-- Расширенные разрешения (`[y/N]`) — создаёт `~/.claude/settings.json` с полным списком разрешённых инструментов (Bash, Edit, Write, Read, Glob, Grep, WebFetch, WebSearch, NotebookEdit, Task, Skill)
+- Расширенные разрешения (`[y/N]`) — создаёт или обновляет `~/.claude/settings.json` с разрешёнными инструментами (Bash, Edit, Write, Read, Glob, Grep, WebFetch, WebSearch, NotebookEdit, TodoWrite, Skill). При наличии существующего файла мержит permissions, не трогая остальные настройки
 - Меню логина показывает имена окон рядом с номерами сессий, фильтрует escape-артефакты Termius
 - **Короткий промпт** — опциональный `[y/N]`, корректный синтаксис для zsh (`%1~`) и bash (`\W`)
 - **Автокомплит** — `compctl` для zsh, `complete -F` для bash
