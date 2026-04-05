@@ -3,7 +3,10 @@
 # ============================================
 # iPhone Terminal Ultra Setup
 # Interactive installer for tmux + aliases
+# Version: 1.1.0
 # ============================================
+
+VERSION="1.1.0"
 
 set -euo pipefail
 
@@ -398,7 +401,7 @@ if [ "$INSTALL_AGENT_PERMS" = true ]; then
     SETTINGS_FILE="$HOME/.claude/settings.json"
     REQUIRED_PERMS='["Bash","Read","Edit","Write","Glob","Grep","WebFetch","WebSearch","NotebookEdit","TodoWrite","Skill"]'
 
-    if [ -f "$SETTINGS_FILE" ]; then
+    if [ -f "$SETTINGS_FILE" ] && command -v python3 &>/dev/null; then
         cp "$SETTINGS_FILE" "$BACKUP_DIR/settings.json"
         # Мержим permissions в существующий файл, не трогая остальные настройки
         python3 -c "
@@ -437,6 +440,30 @@ with open('$SETTINGS_FILE', 'w') as f:
 CLAUDE_SETTINGS
         info "Расширенные разрешения установлены в ~/.claude/settings.json";
     }
+    elif [ -f "$SETTINGS_FILE" ]; then
+        # python3 не найден — бэкапим и перезаписываем
+        cp "$SETTINGS_FILE" "$BACKUP_DIR/settings.json"
+        warn "python3 не найден — существующий settings.json сохранён в бэкап, перезаписываем"
+        cat > "$SETTINGS_FILE" << 'CLAUDE_SETTINGS'
+{
+  "permissions": {
+    "allow": [
+      "Bash",
+      "Edit",
+      "Glob",
+      "Grep",
+      "NotebookEdit",
+      "Read",
+      "Skill",
+      "TodoWrite",
+      "WebFetch",
+      "WebSearch",
+      "Write"
+    ]
+  }
+}
+CLAUDE_SETTINGS
+        info "Расширенные разрешения установлены в ~/.claude/settings.json"
     else
         cat > "$SETTINGS_FILE" << 'CLAUDE_SETTINGS'
 {
@@ -534,17 +561,18 @@ alias l='ls -la'
 # Проекты ($PROJECTS_DIR)
 unalias $NAV_P $NAV_NP 2>/dev/null
 $NAV_P() {
-    if [ -z "\$1" ]; then
+    if [ -z "\${1:-}" ]; then
         echo "Доступные проекты:"
         ls -1 "$PROJECTS_DIR"
         return
     fi
-    if [ ! -d "$PROJECTS_DIR/\$1" ]; then
-        echo "Проект не найден: \$1"
+    local proj="\$*"
+    if [ ! -d "$PROJECTS_DIR/\$proj" ]; then
+        echo "Проект не найден: \$proj"
         echo "Доступные: \$(ls -1 "$PROJECTS_DIR")"
         return 1
     fi
-    cd "$PROJECTS_DIR/\$1" && ls
+    cd "$PROJECTS_DIR/\$proj" && ls
 }
 ALIASES
 
@@ -764,8 +792,8 @@ if [ "$INSTALL_PLUGINS" = true ]; then
     cat >> "$HOME/.tmux.conf" << 'PLUGINS'
 
 # Resurrect + Continuum — автосохранение
-run-shell ~/.tmux/plugins/tmux-resurrect/resurrect.tmux
-run-shell ~/.tmux/plugins/tmux-continuum/continuum.tmux
+run-shell "~/.tmux/plugins/tmux-resurrect/resurrect.tmux"
+run-shell "~/.tmux/plugins/tmux-continuum/continuum.tmux"
 set -g @continuum-save-interval '10'
 set -g @continuum-restore 'on'
 set -g @resurrect-save-shell-history 'off'
@@ -773,7 +801,7 @@ PLUGINS
 
     # Крон для очистки старых сохранений (добавляем только если ещё нет)
     if ! crontab -l 2>/dev/null | grep -q 'tmux/resurrect'; then
-        (crontab -l 2>/dev/null; echo "0 */6 * * * find ~/.tmux/resurrect -name '*.txt' ! -name 'last' -mmin +60 -delete") | crontab - && \
+        (crontab -l 2>/dev/null; echo "0 */6 * * * find \$HOME/.tmux/resurrect -name '*.txt' ! -name 'last' -mmin +60 -delete") | crontab - && \
             info "Крон очистки настроен" || warn "Ошибка установки крона"
     else
         info "Крон очистки уже настроен"
